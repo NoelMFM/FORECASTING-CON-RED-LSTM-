@@ -1,0 +1,452 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+datos=pd.read_excel('/content/prueba1.xlsx',usecols=['Fecha', 'P','G(i)','H_sun','T2m','WS10m','Int'])
+print(datos)
+
+datos['Fecha'] = pd.to_datetime(datos['Fecha'], format='%Y-%m-%d %H:%M')
+datos = datos.set_index('Fecha')
+datos = datos.asfreq('H')
+datos = datos.sort_index()
+datos.head()
+
+print(datos.index[0])             # Primer elemento del índice
+print(datos.index[-1])            # Último elemento del índice
+print(datos.index[-1]-datos.index[0])# Diferencia
+
+import seaborn as sns
+sns.set()
+
+Pot=datos['P']
+
+fig,ax=plt.subplots(figsize=(12,5))
+sns.lineplot(Pot, ax=ax);
+
+import plotly.express as px
+
+Muestras=len(Pot)
+Muestras_hora=1
+#transformada de fourier
+tf=np.abs(np.fft.rfft(Pot,Muestras))
+#Vector Frecuencias, eje hor
+frec=np.fft.rfftfreq(Muestras,d=1./Muestras_hora)
+#Grafica
+fig=px.line(x=frec,y=tf,log_x=True)
+fig.update_layout(xaxis_title=f'Frecuencia (1/hora)')
+fig.show()
+
+frec1=0.04166667
+frec2=0.0833333
+frec3=114.0771e-6
+print(f'La frecuencia 1 de {frec1} equivale {1/frec1} a horas')
+print(f'La frecuencia 2 de {frec2} equivale {1/frec2} a horas')
+print(f'La frecuencia 3 de {frec3} equivale {1/frec3} a horas, es decir {1/frec3/24/365.25} años')
+
+segundos=datos.index.map(pd.Timestamp.timestamp)
+segundos
+#Prueba
+segundos[3]-segundos[2]#Debera dar 3600s, es decir 1h
+
+año=365.25*24*3600
+#Años de manera periodica
+
+año_sen=np.sin(segundos*(2*np.pi/año))
+#Se grafican 2 años
+fig,ax=plt.subplots()
+plt.plot(np.array(año_sen)[:17521])
+plt.xlabel('Tiempo [horas]')
+plt.title('Representacion senoidal de 2 años')
+
+#Linea vertical en 1 año
+ax.axvline(365*24,color='b',linestyle='-.',alpha=0.8);
+
+#Linea vertical en y=0.5
+ax.axhline(0,color='r',linestyle='-.',alpha=0.8)
+
+año_cos=np.cos(segundos*(2*np.pi/año))
+
+#Se grafican 2 años
+fig,ax=plt.subplots()
+plt.plot(np.array(año_sen)[:17521])
+plt.plot(np.array(año_cos)[:17521])
+plt.xlabel('Tiempo [horas]')
+plt.title('Representacion senoidal de 2 años')
+
+#Linea vertical en 1 año
+ax.axvline(365*24,color='b',linestyle='-.',alpha=0.8);
+
+#Linea vertical en y=0.5
+ax.axhline(0,color='r',linestyle='-.',alpha=0.8)
+
+dia=24*3600
+
+datos['dia_sen']=np.sin(segundos*(2*np.pi/dia))
+datos['dia_cos']=np.cos(segundos*(2*np.pi/dia))
+datos['año_sen']=np.sin(segundos*(2*np.pi/año))
+datos['año_cos']=np.cos(segundos*(2*np.pi/año))
+datos
+
+datos=datos.reset_index()
+datos=datos.drop(columns=['Fecha'])
+datos
+
+from sklearn.preprocessing import MinMaxScaler
+
+def escalar_dataset(data_input, col_ref):
+    '''Escala el dataset en el rango de -1 a 1.
+
+    Entradas:
+    - data_input: diccionario con los dataset de entrada y salida del modelo
+    (data_input = {'x_tr':x_tr, 'y_tr':y_tr, 'x_vl':x_vl, 'y_vl':y_vl,
+                    'y_ts':y_ts})
+    - col_ref: parámetro adicional para especificar la columna que contiene
+      la variable a predecir
+
+
+    Retorna:
+    - data_scaled: diccionario con los datasets de entrada y salida escalados
+      (tiene la misma estructura del diccionario de entrada)
+    - scaler: el escalador usado (requerido para las predicciones)
+    '''
+
+    # *** Implementación adicional: determinar el índice de la columna
+    # que contiene la variable a predecir
+    col_ref = datos.columns.get_loc(col_ref)
+
+    # Número de instantes de tiempo de entrada y de covariables
+    NFEATS = datos.shape[1]
+
+    # Generar listado con "scalers" (1 por cada covariable de entrada)
+    scalers = [MinMaxScaler(feature_range=(-1,1)) for i in range(NFEATS)]
+
+    # Arreglos que contendrán los datasets escalados
+    datos_s = np.zeros(data_input.shape)
+
+    # Escalamiento: se usarán los min/max del set de entrenamiento para
+    # escalar la totalidad de los datasets
+
+    # Escalamiento Xs
+    for i in range(NFEATS):
+        datos_i = datos.iloc[:, i].values.reshape(-1, 1)
+        datos_s[:, i] = scalers[i].fit_transform(datos_i).flatten()
+    # Conformar diccionario de salida
+
+
+    return datos_s, scalers[col_ref]
+
+# Escalamiento del dataset con la función anterior
+
+# Y escalar (especificando la columna con la variable a predecir)
+data_s, scaler = escalar_dataset(datos, col_ref = 'P' )
+datos_esc_df=pd.DataFrame(data_s)
+datos_esc_df.columns=list(datos.columns.values)
+datos_esc_df
+
+# Función para generar las particiones preservando las características
+# de la serie de tiempo
+
+def train_val_test_split(dataframe, tr_size=0.8, vl_size=0.1, ts_size=0.1 ):
+    # Definir número de datos en cada subserie
+    N = dataframe.shape[0]
+    Ntrain = int(tr_size*N)  # Número de datos de entrenamiento
+    Nval = int(vl_size*N)    # Número de datos de validación
+    Ntst = N - Ntrain - Nval # Número de datos de prueba
+
+    # Realizar partición
+    train = dataframe[0:Ntrain]
+    val = dataframe[Ntrain:Ntrain+Nval]
+    test = dataframe[Ntrain+Nval:]
+
+    return train, val, test
+
+# Prueba de la función
+tr, vl, ts = train_val_test_split(datos_esc_df)
+
+print(f'Tamaño set de entrenamiento: {tr.shape}')
+print(f'Tamaño set de validación: {vl.shape}')
+print(f'Tamaño set de prueba: {ts.shape}')
+
+def crear_dataset_supervisado(array, input_length, output_length):
+    '''Permite crear un dataset con las entradas (X) y salidas (Y)
+    requeridas por la Red LSTM.
+
+    Parámetros:
+    - array: arreglo numpy de tamaño N x features (N: cantidad de datos,
+      f: cantidad de features)
+    - input_length: instantes de tiempo consecutivos de la(s) serie(s) de tiempo
+      usados para alimentar el modelo
+    - output_length: instantes de tiempo a pronosticar (salida del modelo)
+    '''
+
+    # Inicialización
+    X, Y = [], []    # Listados que contendrán los datos de entrada y salida del modelo
+    shape = array.shape
+    if len(shape)==1: # Si tenemos sólo una serie (univariado)
+        fils, cols = array.shape[0], 1
+        array = array.reshape(fils,cols)
+    else: # Multivariado <-- <--- ¡esta parte de la función se ejecuta en este caso!
+        fils, cols = array.shape
+
+    # Generar los arreglos
+    for i in range(fils-input_length-output_length):
+        # Entrada al modelo
+        X.append(array[i:i+INPUT_LENGTH,0:cols])
+
+        # Salida (el índice 1 corresponde a la columna con la variable a predecir)
+        Y.append(array[i+input_length:i+input_length+output_length,1].reshape(output_length,1))
+
+    # Convertir listas a arreglos de NumPy
+    X = np.array(X)
+    Y = np.array(Y)
+
+    return X, Y
+
+# Crear los datasets de entrenamiento, prueba y validación y verificar sus tamaños
+INPUT_LENGTH = 24    # Hiperparámetro
+OUTPUT_LENGTH = 2    # Modelo uni-step
+
+x_tr, y_tr = crear_dataset_supervisado(tr.values, INPUT_LENGTH, OUTPUT_LENGTH)
+x_vl, y_vl = crear_dataset_supervisado(vl.values, INPUT_LENGTH, OUTPUT_LENGTH)
+x_ts, y_ts = crear_dataset_supervisado(ts.values, INPUT_LENGTH, OUTPUT_LENGTH)
+
+# Imprimir información en pantalla
+print('Tamaños entrada (BATCHES x INPUT_LENGTH x FEATURES) y de salida (BATCHES x OUTPUT_LENGTH x FEATURES)')
+print(f'Set de entrenamiento - x_tr: {x_tr.shape}, y_tr: {y_tr.shape}')
+print(f'Set de validación - x_vl: {x_vl.shape}, y_vl: {y_vl.shape}')
+print(f'Set de prueba - x_ts: {x_ts.shape}, y_ts: {y_ts.shape}')
+
+# Se genera una gráfica tipo violín para ver la distribución
+# de los valores en cada covariable (entrada) y en la variable a
+# predecir (salida)
+
+fig, ax = plt.subplots(figsize=(12,4))
+for i in range(10):
+    ax.violinplot(dataset=x_tr[:,:,i].flatten(), positions=[i])
+    ax.violinplot(dataset=x_vl[:,:,i].flatten(), positions=[i])
+    ax.violinplot(dataset=x_ts[:,:,i].flatten(), positions=[i])
+
+# Etiquetas eje horizontal
+ax.set_xticks(list(range(10)))
+ax.set_xticklabels(datos.keys(), rotation=90)
+ax.autoscale();
+
+# Y hagamos lo mismo con la variable de salida:
+fig, ax = plt.subplots(figsize=(6,4))
+ax.violinplot(dataset=y_tr.flatten())
+ax.violinplot(dataset=y_vl.flatten())
+ax.violinplot(dataset=y_ts.flatten())
+ax.set_xticks([1])
+ax.set_xticklabels(['y (salida)']);
+
+# Creación del modelo
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.optimizers import RMSprop, Adam
+import tensorflow as tf
+
+# Ajustar parámetros para reproducibilidad del entrenamiento
+tf.random.set_seed(123)
+tf.config.experimental.enable_op_determinism()
+
+# El modelo
+N_UNITS = 128 # Tamaño del estado oculto (h) y de la celdad de memoria (c) (128)
+INPUT_SHAPE = (x_tr.shape[1], x_tr.shape[2]) # 24 (horas) x 10 (features)
+
+modelo = Sequential()
+modelo.add(LSTM(N_UNITS, input_shape=INPUT_SHAPE))
+
+# Y lo único que cambia con respecto al modelo multivariado + uni-step es
+# el tamaño deldato de salida
+modelo.add(Dense(OUTPUT_LENGTH, activation='linear')) # activation = 'linear' pues queremos pronosticar (regresión)
+
+# Pérdida: se usará el RMSE (root mean squared error) para el entrenamiento
+# pues permite tener errores en las mismas unidades de la temperatura
+def root_mean_squared_error(y_true, y_pred):
+    rmse = tf.math.sqrt(tf.math.reduce_mean(tf.square(y_pred-y_true)))
+    return rmse
+
+# Compilación
+optimizador = RMSprop(learning_rate=5e-4) # 5e-5
+modelo.compile(
+    optimizer = optimizador,
+    loss = root_mean_squared_error,
+)
+
+# Entrenamiento (aproximadamente 1 min usando GPU)
+EPOCHS = 60 # Hiperparámetro
+BATCH_SIZE = 128 # Hiperparámetro
+historia = modelo.fit(
+    x = x_tr,
+    y = y_tr,
+    batch_size = BATCH_SIZE,
+    epochs = EPOCHS,
+    validation_data = (x_vl, y_vl),
+    verbose=2
+)
+
+ # Graficar curvas de entrenamiento y validación
+ # para verificar que no existe overfitting
+plt.plot(historia.history['loss'],label='RMSE train')
+plt.plot(historia.history['val_loss'],label='RMSE val')
+plt.xlabel('Iteración')
+plt.ylabel('RMSE')
+plt.legend();
+
+# Cálculo de rmses para train, val y test
+rmse_tr = modelo.evaluate(x=x_tr, y=y_tr, verbose=0)
+rmse_vl = modelo.evaluate(x=x_vl, y=y_vl, verbose=0)
+rmse_ts = modelo.evaluate(x=x_ts, y=y_ts, verbose=0)
+
+# Imprimir resultados en pantalla
+print('Comparativo desempeños:')
+print(f'  RMSE train:\t {rmse_tr:.3f}')
+print(f'  RMSE val:\t {rmse_vl:.3f}')
+print(f'  RMSE test:\t {rmse_ts:.3f}')
+
+def predecir(x, model, scaler):
+    '''Genera la predicción de OUTPUT_LENGTH instantes
+    de tiempo a futuro con el modelo entrenado.
+
+    Entrada:
+    - x: batch (o batches) de datos para ingresar al modelo
+      (tamaño: BATCHES X INPUT_LENGTH X FEATURES)
+    - model: Red LSTM entrenada
+    - scaler: escalador (requerido para llevar la predicción a la escala original)
+
+    Salida:
+    - y_pred: la predicción en la escala original (tamaño: BATCHES X OUTPUT_LENGTH X FEATURES)
+    '''
+
+    # Calcular predicción escalada en el rango de -1 a 1
+    y_pred_s = model.predict(x,verbose=0)
+
+    # Llevar la predicción a la escala original
+    y_pred = scaler.inverse_transform(y_pred_s)
+
+    return y_pred.flatten()
+
+# 1. Generar las predicciones sobre el set de prueba
+y_ts_pred_s = modelo.predict(x_ts, verbose=0)
+
+# 2. Realizar la transformación inversa de las predicciones para llevar sus
+# valores a la escala original
+y_ts_pred = scaler.inverse_transform(y_ts_pred_s )
+
+# 3. Calcular RMSE para cada instante de tiempo predicho
+diff_cuad = np.square(y_ts.squeeze()-y_ts_pred) # BATCHESx2
+proms = np.mean(diff_cuad, axis=0) # 1x2
+rmse = np.sqrt(proms) # 1x2
+
+# Graficar rmse para cada timestep
+t = np.linspace(1,2,2)
+
+fig, ax = plt.subplots()
+ax.scatter(t,rmse)
+ax.set_xlabel('Hora predicha')
+ax.set_ylabel('Error RMSE (W)')
+plt.xticks(ticks=t, labels=t)
+plt.grid();
+
+# Calcular predicciones sobre el set de prueba
+y_ts_pred = predecir(x_ts, modelo, scaler)
+y_real = scaler.inverse_transform(y_ts[:3480,1])
+pred = np.array([])
+a=len(y_ts_pred)
+for i in range(round(a/2)):
+  if i%2 == 0:
+    pred= np.concatenate((pred, [y_ts_pred[i]]))
+
+N = len(y_ts_pred)    # Número de predicciones
+ndato = np.linspace(1,N,N)
+# Cálculo de errores simples
+
+errores = abs(y_real[:1740].flatten()-pred[:1740].flatten())/y_real[:1740].flatten()
+
+plt.plot(errores);
+
+hpredic=48
+a=x_ts[:hpredic]
+pred=predecir(a, modelo, scaler)
+t1 = np.array([])  # Inicializar t1 como un array vacío
+t2 = np.array([])  # Inicializar t2 como un array vacío
+real = np.array([])  # Inicializar t2 como un array vacío
+for i in range(hpredic*2):
+  if i%2 == 0:
+    t1= np.concatenate((t1, [pred[i]]))
+  else:
+    t2=np.concatenate((t2, [pred[i]]))
+
+ t1=np.concatenate((t1, [0]))
+ t2=np.concatenate(([0], t2))
+plt.plot(t1,label='predicción en t+1')
+plt.plot(t2,label='predicción en t+2')
+plt.plot(y_real[:48],label='Valor real')
+plt.xlabel('Horas')
+plt.ylabel('Potencia')
+plt.legend();
+
+def pfi_modelo(model, x, y, cols):
+    '''Calcula la métrica "permutation feature importance"
+    del modelo.
+
+    Entradas:
+    - model: modelo entrenado
+    - x: arreglo de entradas (características)
+    - y: arreglo de targets (salidas de referencia)
+    - cols: nombres de las columnas en el set de datos original
+
+    Retorna:
+    - DataFrame con los features importances
+
+    '''
+    NFEATS = x.shape[2] # Número de columnas del arreglo de entradas (10)
+
+    # Arreglo que contendrá los PFIs calculados
+    resultados = []
+
+    # 1. Estimar el error original del modelo entrenado
+    rmse_orig = model.evaluate(x, y, verbose = 0)
+
+    # 2. Iterar sobre cada columna y para cada iteración:
+    # 2.1. Permutar la columna
+    # 2.2. Calcular rmse_perm
+    # 2.3. Calcular pfi = rmse_perm/rmse_orig
+    # 2.4. Almacenar el resultado
+    for k in range(NFEATS):
+        print(f'\tCalculando feature_importance variable {k+1}/{NFEATS}')
+
+        # Permutar covariable k
+        save_col = x[:,:,k].copy() # Extraer una copia de la columna
+        np.random.shuffle(x[:,:,k]) # Permutarla aleatoriamente
+
+        # Calcular rmse_perm
+        rmse_perm = model.evaluate(x, y, verbose=0)
+
+        # Calcular cociente (pfi)
+        pfi = rmse_perm/rmse_orig
+
+        # Almacenar en "resultados"
+        resultados.append({'feature':cols[k],'feature_importance':pfi})
+
+        # Y restablecer la covariable a su posicion original (necesario
+        # para la siguiente iteración)
+        x[:,:,k] = save_col
+
+    # Crear DataFrame de Pandas a partir de "resultados"
+    pfis = pd.DataFrame(resultados).sort_values(by='feature_importance', ascending=False)
+
+    return pfis
+
+feat_imp = pfi_modelo(modelo,
+                      x_vl,
+                      y_vl,
+                      datos.columns)
+feat_imp
+
+ax = sns.barplot(data=feat_imp, x='feature_importance', y='feature')
+ax.axvline(1.0, color='k', linestyle='--', label='Referencia')
+ax.legend();
+
+
+
