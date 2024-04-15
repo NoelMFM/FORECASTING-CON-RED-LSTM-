@@ -1,0 +1,23 @@
+# Función para generar las particiones preservando las características
+# de la serie de tiempo
+
+def train_val_test_split(dataframe, tr_size=0.8, vl_size=0.1, ts_size=0.1 ):
+    # Definir número de datos en cada subserie
+    N = dataframe.shape[0]
+    Ntrain = int(tr_size*N)  # Número de datos de entrenamiento
+    Nval = int(vl_size*N)    # Número de datos de validación
+    Ntst = N - Ntrain - Nval # Número de datos de prueba
+
+    # Realizar partición
+    train = dataframe[0:Ntrain]
+    val = dataframe[Ntrain:Ntrain+Nval]
+    test = dataframe[Ntrain+Nval:]
+
+    return train, val, test
+
+# Prueba de la función
+tr, vl, ts = train_val_test_split(datos_esc_df)
+
+print(f'Tamaño set de entrenamiento: {tr.shape}')
+print(f'Tamaño set de validación: {vl.shape}')
+print(f'Tamaño set de prueba: {ts.shape}')
