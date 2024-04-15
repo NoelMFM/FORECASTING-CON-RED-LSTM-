@@ -1,0 +1,45 @@
+# Creación del modelo
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.optimizers import RMSprop, Adam
+import tensorflow as tf
+
+# Ajustar parámetros para reproducibilidad del entrenamiento
+tf.random.set_seed(123)
+tf.config.experimental.enable_op_determinism()
+
+# El modelo
+N_UNITS = 128 # Tamaño del estado oculto (h) y de la celdad de memoria (c) (128)
+INPUT_SHAPE = (x_tr.shape[1], x_tr.shape[2]) # 24 (horas) x 10 (features)
+
+modelo = Sequential()
+modelo.add(LSTM(N_UNITS, input_shape=INPUT_SHAPE))
+
+# Y lo único que cambia con respecto al modelo multivariado + uni-step es
+# el tamaño deldato de salida
+modelo.add(Dense(OUTPUT_LENGTH, activation='linear')) # activation = 'linear' pues queremos pronosticar (regresión)
+
+# Pérdida: se usará el RMSE (root mean squared error) para el entrenamiento
+# pues permite tener errores en las mismas unidades de la temperatura
+def root_mean_squared_error(y_true, y_pred):
+    rmse = tf.math.sqrt(tf.math.reduce_mean(tf.square(y_pred-y_true)))
+    return rmse
+
+# Compilación
+optimizador = RMSprop(learning_rate=5e-4) # 5e-5
+modelo.compile(
+    optimizer = optimizador,
+    loss = root_mean_squared_error,
+)
+
+# Entrenamiento (aproximadamente 1 min usando GPU)
+EPOCHS = 60 # Hiperparámetro
+BATCH_SIZE = 128 # Hiperparámetro
+historia = modelo.fit(
+    x = x_tr,
+    y = y_tr,
+    batch_size = BATCH_SIZE,
+    epochs = EPOCHS,
+    validation_data = (x_vl, y_vl),
+    verbose=2
+)
