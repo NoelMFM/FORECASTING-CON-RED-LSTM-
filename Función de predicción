@@ -1,0 +1,21 @@
+def predecir(x, model, scaler):
+    '''Genera la predicción de OUTPUT_LENGTH instantes
+    de tiempo a futuro con el modelo entrenado.
+
+    Entrada:
+    - x: batch (o batches) de datos para ingresar al modelo
+      (tamaño: BATCHES X INPUT_LENGTH X FEATURES)
+    - model: Red LSTM entrenada
+    - scaler: escalador (requerido para llevar la predicción a la escala original)
+
+    Salida:
+    - y_pred: la predicción en la escala original (tamaño: BATCHES X OUTPUT_LENGTH X FEATURES)
+    '''
+
+    # Calcular predicción escalada en el rango de -1 a 1
+    y_pred_s = model.predict(x,verbose=0)
+
+    # Llevar la predicción a la escala original
+    y_pred = scaler.inverse_transform(y_pred_s)
+
+    return y_pred.flatten()
