@@ -1,0 +1,51 @@
+def pfi_modelo(model, x, y, cols):
+    '''Calcula la métrica "permutation feature importance"
+    del modelo.
+
+    Entradas:
+    - model: modelo entrenado
+    - x: arreglo de entradas (características)
+    - y: arreglo de targets (salidas de referencia)
+    - cols: nombres de las columnas en el set de datos original
+
+    Retorna:
+    - DataFrame con los features importances
+
+    '''
+    NFEATS = x.shape[2] # Número de columnas del arreglo de entradas (10)
+
+    # Arreglo que contendrá los PFIs calculados
+    resultados = []
+
+    # 1. Estimar el error original del modelo entrenado
+    rmse_orig = model.evaluate(x, y, verbose = 0)
+
+    # 2. Iterar sobre cada columna y para cada iteración:
+    # 2.1. Permutar la columna
+    # 2.2. Calcular rmse_perm
+    # 2.3. Calcular pfi = rmse_perm/rmse_orig
+    # 2.4. Almacenar el resultado
+    for k in range(NFEATS):
+        print(f'\tCalculando feature_importance variable {k+1}/{NFEATS}')
+
+        # Permutar covariable k
+        save_col = x[:,:,k].copy() # Extraer una copia de la columna
+        np.random.shuffle(x[:,:,k]) # Permutarla aleatoriamente
+
+        # Calcular rmse_perm
+        rmse_perm = model.evaluate(x, y, verbose=0)
+
+        # Calcular cociente (pfi)
+        pfi = rmse_perm/rmse_orig
+
+        # Almacenar en "resultados"
+        resultados.append({'feature':cols[k],'feature_importance':pfi})
+
+        # Y restablecer la covariable a su posicion original (necesario
+        # para la siguiente iteración)
+        x[:,:,k] = save_col
+
+    # Crear DataFrame de Pandas a partir de "resultados"
+    pfis = pd.DataFrame(resultados).sort_values(by='feature_importance', ascending=False)
+
+    return pfis
