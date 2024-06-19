@@ -1,6 +1,0 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-
-datos=pd.read_excel('/content/prueba1.xlsx',usecols=['Fecha', 'P','G(i)','H_sun','T2m','WS10m','Int'])
-print(datos)
